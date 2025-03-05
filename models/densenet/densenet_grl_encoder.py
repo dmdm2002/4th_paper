@@ -1,0 +1,77 @@
+import torch.nn as nn
+import torchvision.models as models
+from models.layers.gradient_reveral import ReverseLayerF
+
+
+class DensenetGRLEncoder(nn.Module):
+    def __init__(self, enc_model: str, cls_num: int):
+        super().__init__()
+        enc_model = enc_model.lower()
+
+        if enc_model == 'densenet121':
+            encoder = models.densenet121(weights='IMAGENET1K_V1')
+            self.emb_size = 1024
+        elif enc_model == 'densenet161':
+            encoder = models.densenet161(weights='IMAGENET1K_V1')
+            self.emb_size = 1024
+        elif enc_model == 'densenet169':
+            encoder = models.densenet169(weights='IMAGENET1K_V1')
+            self.emb_size = 1024
+        else:
+            print(
+                "Error encoder models!!!, You can select a models in  this list ==> [densenet121, densenet161, densenet169]")
+            print("Select default Model: [densenet121]")
+            encoder = models.densenet121(weights='IMAGENET1K_V1')
+            self.emb_size = 1024
+
+        self.stem = encoder.features[:4]
+
+        self.dense_block_1 = encoder.features.denseblock1
+        self.transition_1 = encoder.features.transition1
+
+        self.dense_block_2 = encoder.features.denseblock2
+        self.transition_2 = encoder.features.transition2
+
+        self.dense_block_3 = encoder.features.denseblock3
+        self.transition_3 = encoder.features.transition3
+
+        self.dense_block_4 = encoder.features.denseblock4
+        self.norm5 = encoder.features.norm5
+
+        self.avg_pool = nn.AdaptiveAvgPool2d((1, 1))
+
+        # self.classifier = nn.Linear(in_features=self.emb_size, out_features=cls_num)
+
+        # Label Classifier (Main Task)
+        self.label_classifier = nn.Linear(in_features=self.emb_size, out_features=cls_num)
+
+        # Domain Classifier (GRL 적용)
+        self.domain_classifier = nn.Linear(self.emb_size, 2)
+
+    def forward(self, x):
+        x_stem = self.stem(x)
+
+        x_dense_1 = self.dense_block_1(x_stem)
+        x_trans_1 = self.transition_1(x_dense_1)  # down-sizing
+
+        # dense block 1
+        x_dense_2 = self.dense_block_2(x_trans_1)
+        x_trans_2 = self.transition_2(x_dense_2)  # down-sizing
+
+        # dense block 1
+        x_dense_3 = self.dense_block_3(x_trans_2)
+        x_trans_3 = self.transition_3(x_dense_3)  # down-sizing
+
+        # dense block 1
+        x_dense_4 = self.dense_block_4(x_trans_3)
+        x_norm = self.norm5(x_dense_4)
+
+        x_pool = self.avg_pool(x_norm)
+
+        x_pool = x_pool.view(x_pool.size(0), -1)
+        reverse_feature = ReverseLayerF.apply(x_pool, alpha)
+
+        label_preds = self.label_classifier(x_pool)
+        domain_preds = self.domain_classifier(reverse_feature)
+
+        return label_preds, domain_preds, [x_dense_1, x_dense_2, x_trans_3, x_dense_4]
