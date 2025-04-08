@@ -49,7 +49,7 @@ cls_lambda: 0.8
 batch_size: 16
 weight_decay: 0.000001
 momentum: 0.9
-b1: 0.5
+b1: 0.9
 b2: 0.999
 
 do_ckp_save: True
